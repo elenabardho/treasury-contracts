@@ -110,6 +110,23 @@ describe("When sweeping", () => {
         });
       });
 
+      test("does not lock a dust output at the script address on a full sweep", async () => {
+        await emulator.as("Anyone", async (blaze) => {
+          const tx = await (
+            await sweep({
+              configsOrScripts: { configs },
+              input: scriptInput,
+              blaze,
+            })
+          ).complete();
+          const scriptOutputs = [...tx.body().outputs()].filter(
+            (output) =>
+              output.address().toBech32() === scriptAddress.toBech32(),
+          );
+          expect(scriptOutputs).toBeEmpty();
+        });
+      });
+
       test("can partially sweep, so long as the remainder stays locked", async () => {
         await emulator.as("Anyone", async (blaze) => {
           await emulator.expectValidTransaction(

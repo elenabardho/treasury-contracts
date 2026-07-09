@@ -86,7 +86,7 @@ export async function sweep<P extends Provider, W extends Wallet>({
   tx = await attachScriptRef(tx, scripts.treasuryScript, blaze);
 
   const remainder = Value.merge(input.output().amount(), makeValue(-amount));
-  if (remainder !== Value.zero()) {
+  if (!Value.empty(remainder)) {
     tx = tx.lockAssets(scriptAddress, remainder, Data.Void());
   }
 
