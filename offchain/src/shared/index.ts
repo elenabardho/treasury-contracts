@@ -4,6 +4,7 @@ import {
   NetworkId,
   RewardAccount,
   Script,
+  Slot,
   TransactionUnspentOutput,
   Value,
   type CredentialCore,
@@ -61,6 +62,23 @@ export interface ICompiledScripts {
     TreasuryConfiguration
   >;
   vendorScript: ICompiledScript<VendorVendorSpend, VendorConfiguration>;
+}
+
+// A definite validity upper bound must stay within the ledger's slot-to-time
+// translation horizon (~36 hours past the tip on mainnet), otherwise script
+// evaluation fails with a PastHorizon error
+export function horizonCappedValidUntilSlot<P extends Provider>(
+  provider: P,
+  expirationUnix: bigint,
+  startUnix?: number,
+): Slot {
+  const start = startUnix ?? Date.now();
+  const maxHorizon = provider.network === NetworkId.Testnet ? 6 : 36;
+  const upperBoundUnix = Math.min(
+    Number(expirationUnix),
+    start + maxHorizon * 60 * 60 * 1000,
+  );
+  return Slot(provider.unixToSlot(upperBoundUnix) - 30);
 }
 
 export function loadConfigsAndScripts<P extends Provider, W extends Wallet>(
