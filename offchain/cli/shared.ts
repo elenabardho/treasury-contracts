@@ -36,6 +36,7 @@ import { IOutput } from "../src/metadata/types/initialize-reorganize";
 import { INewInstance } from "../src/metadata/types/new-instance";
 import {
   toMultisig,
+  toPermission,
   TPermissionMetadata,
   TPermissionName,
 } from "../src/metadata/types/permission";
@@ -1392,6 +1393,19 @@ export async function selectUtxos(
     choices,
   });
   return selectedIndices.map((index) => utxos[index]);
+}
+
+export function resolvePermission(
+  name: TPermissionName,
+  fallback: MultisigScript,
+  metadata?: ITransactionMetadata<INewInstance>,
+): TPermissionMetadata {
+  return metadata
+    ? getActualPermission(
+        metadata.body.permissions[name],
+        metadata.body.permissions,
+      )
+    : toPermission(fallback);
 }
 
 export function getActualPermission(

@@ -11,7 +11,6 @@ import {
 } from "../../src/metadata/types/fund";
 import {
   toMultisig,
-  toPermission,
   TPermissionMetadata,
 } from "../../src/metadata/types/permission";
 import {
@@ -20,7 +19,6 @@ import {
   loadConfigsAndScripts,
 } from "../../src/shared";
 import {
-  getActualPermission,
   getAnchor,
   getBlazeInstance,
   getConfigs,
@@ -31,6 +29,7 @@ import {
   getTransactionMetadata,
   isAddress,
   maybeInput,
+  resolvePermission,
   selectUtxo,
   transactionDialog,
 } from "../shared";
@@ -262,12 +261,11 @@ export async function fund(
   );
   const utxo = await selectUtxo(utxos);
 
-  const fundPermissions = metadata
-    ? getActualPermission(
-        metadata.body.permissions.fund,
-        metadata.body.permissions,
-      )
-    : toPermission(configs.treasury.permissions.fund);
+  const fundPermissions = resolvePermission(
+    "fund",
+    configs.treasury.permissions.fund,
+    metadata,
+  );
 
   const signers = await getSigners(fundPermissions, vendorPermissions);
   const tx = await Treasury.fund({
