@@ -21,6 +21,7 @@ import clipboard from "clipboardy";
 import fetch from "node-fetch";
 import { ETransactionEvent } from "../src";
 import {
+  MultisigScript,
   OneshotOneshotMint,
   TreasuryConfiguration,
   TreasuryTreasurySpend,
@@ -974,6 +975,17 @@ export async function readMetadataFromFile(): Promise<
         obj[k].metadata as ITransactionMetadata<INewInstance>,
       );
       scriptsConstructed = true;
+    } else {
+      try {
+        obj[k].scripts.treasuryScript.config = reviveTreasuryConfig(
+          obj[k].scripts.treasuryScript.config,
+        );
+        obj[k].scripts.vendorScript.config = reviveVendorConfig(
+          obj[k].scripts.vendorScript.config,
+        );
+      } catch {
+        // Leave malformed entries untouched, matching the old pass-through behavior
+      }
     }
     metadata.set(k, obj[k]);
   }
@@ -986,6 +998,56 @@ export async function readMetadataFromFile(): Promise<
 
 export function bigIntReplacer(_key: string, value: any): any {
   return typeof value === "bigint" ? value.toString() : value;
+}
+
+// JSON.parse leaves bigint fields (serialized as strings by bigIntReplacer) as strings,
+// so they must be converted back before the configs are used
+function reviveMultisig(multisig: MultisigScript): MultisigScript {
+  if ("AtLeast" in multisig) {
+    return {
+      AtLeast: {
+        required: BigInt(multisig.AtLeast.required),
+        scripts: multisig.AtLeast.scripts.map(reviveMultisig),
+      },
+    };
+  } else if ("AllOf" in multisig) {
+    return { AllOf: { scripts: multisig.AllOf.scripts.map(reviveMultisig) } };
+  } else if ("AnyOf" in multisig) {
+    return { AnyOf: { scripts: multisig.AnyOf.scripts.map(reviveMultisig) } };
+  } else if ("Before" in multisig) {
+    return { Before: { time: BigInt(multisig.Before.time) } };
+  } else if ("After" in multisig) {
+    return { After: { time: BigInt(multisig.After.time) } };
+  }
+  return multisig;
+}
+
+function reviveTreasuryConfig(
+  config: TreasuryConfiguration,
+): TreasuryConfiguration {
+  return {
+    ...config,
+    expiration: BigInt(config.expiration),
+    payout_upperbound: BigInt(config.payout_upperbound),
+    permissions: {
+      reorganize: reviveMultisig(config.permissions.reorganize),
+      sweep: reviveMultisig(config.permissions.sweep),
+      fund: reviveMultisig(config.permissions.fund),
+      disburse: reviveMultisig(config.permissions.disburse),
+    },
+  };
+}
+
+function reviveVendorConfig(config: VendorConfiguration): VendorConfiguration {
+  return {
+    ...config,
+    expiration: BigInt(config.expiration),
+    permissions: {
+      pause: reviveMultisig(config.permissions.pause),
+      resume: reviveMultisig(config.permissions.resume),
+      modify: reviveMultisig(config.permissions.modify),
+    },
+  };
 }
 
 export async function writeMetadataToFile(
