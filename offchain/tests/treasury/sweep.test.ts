@@ -1,13 +1,15 @@
 import {
   Address,
   AssetId,
+  Ed25519KeyHashHex,
   Hash28ByteBase16,
   Script,
+  Slot,
 } from "@blaze-cardano/core";
 import * as Data from "@blaze-cardano/data";
 import { Emulator } from "@blaze-cardano/emulator";
 import { Core, makeValue } from "@blaze-cardano/sdk";
-import { beforeEach, describe, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import {
   TreasuryConfiguration,
   TreasurySpendRedeemer,
@@ -19,6 +21,8 @@ import {
   sampleTreasuryConfig,
   sampleVendorConfig,
   setupEmulator,
+  sweep_key,
+  Sweeper,
 } from "../utilities";
 
 describe("When sweeping", () => {
@@ -285,6 +289,66 @@ describe("When sweeping", () => {
     });
   });
   describe("before the timeout", () => {
+    describe("the treasury oversight committee", () => {
+      test("can sweep funds back to the treasury early", async () => {
+        await emulator.as(Sweeper, async (blaze) => {
+          await emulator.expectValidTransaction(
+            blaze,
+            await sweep({
+              configsOrScripts: { configs },
+              input: scriptInput,
+              blaze,
+              signers: [Ed25519KeyHashHex(await sweep_key(emulator))],
+              now: new Date(emulator.slotToUnix(Slot(0))),
+            }),
+          );
+        });
+      });
+
+      test("can partially sweep early, so long as the remainder stays locked", async () => {
+        await emulator.as(Sweeper, async (blaze) => {
+          await emulator.expectValidTransaction(
+            blaze,
+            await sweep({
+              configsOrScripts: { configs },
+              input: scriptInput,
+              blaze,
+              amount: 500_000_000_000n - 5_000_000n,
+              signers: [Ed25519KeyHashHex(await sweep_key(emulator))],
+              now: new Date(emulator.slotToUnix(Slot(0))),
+            }),
+          );
+        });
+      });
+
+      test("cannot sweep early without signers", async () => {
+        await emulator.as(Sweeper, async (blaze) => {
+          expect(
+            sweep({
+              configsOrScripts: { configs },
+              input: scriptInput,
+              blaze,
+              after: false,
+            }),
+          ).rejects.toThrow(/requires signers/);
+        });
+      });
+
+      test("cannot sweep early too close to the expiration", async () => {
+        await emulator.as(Sweeper, async (blaze) => {
+          expect(
+            sweep({
+              configsOrScripts: { configs },
+              input: scriptInput,
+              blaze,
+              signers: [Ed25519KeyHashHex(await sweep_key(emulator))],
+              now: new Date(Number(config.expiration) - 10_000),
+            }),
+          ).rejects.toThrow(/expiration is too close/);
+        });
+      });
+    });
+
     describe("a malicious user", () => {
       test("cannot sweep funds", async () => {
         await emulator.as("MaliciousUser", async (blaze) => {
