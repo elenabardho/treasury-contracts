@@ -14,6 +14,12 @@ import {
   TreasuryConfiguration,
   TreasurySpendRedeemer,
 } from "../../src/generated-types/contracts";
+import {
+  fromTxMetadata,
+  ITransactionMetadata,
+} from "../../src/metadata/shared";
+import { ETransactionEvent } from "../../src/metadata/types/events";
+import { ISweep } from "../../src/metadata/types/sweep";
 import { IConfigs, loadTreasuryScript } from "../../src/shared";
 import { sweep } from "../../src/treasury/sweep";
 import {
@@ -107,6 +113,43 @@ describe("When sweeping", () => {
               blaze,
             }),
           );
+        });
+      });
+
+      test("can attach transaction metadata explaining the sweep", async () => {
+        await emulator.as("Anyone", async (blaze) => {
+          const txMetadata: ITransactionMetadata<ISweep> = {
+            "@context":
+              "https://raw.githubusercontent.com/SundaeSwap-finance/treasury-contracts/refs/heads/main/offchain/src/metadata/context.jsonld",
+            hashAlgorithm: "blake2b-256",
+            body: {
+              event: ETransactionEvent.SWEEP,
+              projectIdentifier: "PO123",
+              milestones: ["001", "002"],
+              comment: "Treasury expired; sweeping surplus back",
+            },
+            txAuthor:
+              "c279a3fb3b4e62bbc78e288783b58045d4ae82a18867d8352d02775a",
+            instance: config.registry_token,
+          };
+          const tx = await (
+            await sweep({
+              configsOrScripts: { configs },
+              input: scriptInput,
+              blaze,
+              metadata: txMetadata,
+            })
+          ).complete();
+          const auxMetadata = tx.auxiliaryData()?.metadata();
+          expect(auxMetadata).toBeDefined();
+          const roundTripped = await fromTxMetadata(auxMetadata!);
+          expect(roundTripped.body.event).toEqual(ETransactionEvent.SWEEP);
+          const body = roundTripped.body as ISweep;
+          expect(body.comment).toEqual(
+            "Treasury expired; sweeping surplus back",
+          );
+          expect(body.projectIdentifier).toEqual("PO123");
+          expect(body.milestones).toEqual(["001", "002"]);
         });
       });
 

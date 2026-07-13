@@ -2,11 +2,16 @@ import { Ed25519KeyHashHex } from "@blaze-cardano/core";
 import { Blaze, Provider, Wallet } from "@blaze-cardano/sdk";
 import { confirm, input } from "@inquirer/prompts";
 import { Treasury } from "../../src";
+import { ITransactionMetadata } from "../../src/metadata/shared";
+import { ETransactionEvent } from "../../src/metadata/types/events";
+import { ISweep } from "../../src/metadata/types/sweep";
 import {
   getBlazeInstance,
   getConfigs,
   getOptional,
   getSigners,
+  getTransactionMetadata,
+  maybeInput,
   resolvePermission,
   selectUtxo,
   transactionDialog,
@@ -90,6 +95,29 @@ export async function sweep(
     );
   }
 
+  // The metadata spec treats sweep metadata as optional: attach it when there
+  // is something worth explaining, which is almost always the case for an
+  // early sweep
+  let txMetadata: ITransactionMetadata<ISweep> | undefined;
+  const attachMetadata = await confirm({
+    message: early
+      ? "Attach transaction metadata explaining this early sweep? (recommended)"
+      : "Attach transaction metadata explaining this sweep?",
+    default: early,
+  });
+  if (attachMetadata) {
+    const body: ISweep = {
+      event: ETransactionEvent.SWEEP,
+      comment: await maybeInput({
+        message: "Why are the funds being swept now? (optional)",
+      }),
+    };
+    txMetadata = await getTransactionMetadata(
+      configs.treasury.registry_token,
+      body,
+    );
+  }
+
   const tx = await Treasury.sweep({
     configsOrScripts: { configs, scripts },
     input: utxo,
@@ -97,6 +125,7 @@ export async function sweep(
     amount,
     signers,
     after: !early,
+    metadata: txMetadata,
   });
   const finalTx = await tx.complete();
   await transactionDialog(

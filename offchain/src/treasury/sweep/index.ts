@@ -1,5 +1,6 @@
 import {
   AssetId,
+  AuxiliaryData,
   Ed25519KeyHashHex,
   toHex,
   TransactionUnspentOutput,
@@ -15,6 +16,8 @@ import {
 } from "@blaze-cardano/sdk";
 
 import { TreasurySpendRedeemer } from "../../generated-types/contracts.js";
+import { ITransactionMetadata, toTxMetadata } from "../../metadata/shared.js";
+import { ISweep } from "../../metadata/types/sweep.js";
 import {
   attachScriptRef,
   horizonCappedValidUntilSlot,
@@ -31,6 +34,7 @@ export interface ISweepArgs<P extends Provider, W extends Wallet> {
   // Sweep after the expiration (permissionless); defaults to true unless signers are provided
   after?: boolean;
   now?: Date;
+  metadata?: ITransactionMetadata<ISweep>;
 }
 
 export async function sweep<P extends Provider, W extends Wallet>({
@@ -41,6 +45,7 @@ export async function sweep<P extends Provider, W extends Wallet>({
   signers,
   after,
   now,
+  metadata,
 }: ISweepArgs<P, W>): Promise<TxBuilder> {
   const { configs, scripts } = loadConfigsAndScripts(blaze, configsOrScripts);
   amount ??= input.output().amount().coin();
@@ -84,6 +89,12 @@ export async function sweep<P extends Provider, W extends Wallet>({
     );
   }
   tx = await attachScriptRef(tx, scripts.treasuryScript, blaze);
+
+  if (metadata) {
+    const auxData = new AuxiliaryData();
+    auxData.setMetadata(toTxMetadata(metadata));
+    tx = tx.setAuxiliaryData(auxData);
+  }
 
   const remainder = Value.merge(input.output().amount(), makeValue(-amount));
   if (!Value.empty(remainder)) {
