@@ -108,6 +108,21 @@ export async function sweep(
   if (attachMetadata) {
     const body: ISweep = {
       event: ETransactionEvent.SWEEP,
+      projectIdentifier: await maybeInput({
+        message:
+          "Project identifier from the fund event, if this surplus relates to a funded project (optional):",
+      }),
+      milestones: await maybeInput({
+        message:
+          "Milestone identifiers the surplus originated from, comma separated (optional):",
+      }).then((s) =>
+        s
+          ? s
+              .split(",")
+              .map((m) => m.trim())
+              .filter((m) => m.length > 0)
+          : undefined,
+      ),
       comment: await maybeInput({
         message: "Why are the funds being swept now? (optional)",
       }),
