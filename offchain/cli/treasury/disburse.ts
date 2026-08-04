@@ -28,7 +28,6 @@ import {
   toPermission,
   Treasury,
 } from "src";
-import { loadTreasuryScript } from "src/shared";
 
 async function getDestinations(maxValue: Value): Promise<{
   recipients: { address: Address; amount: Value }[];
@@ -119,10 +118,7 @@ export async function disburse(
   }
   const { configs, scripts } = await getConfigs(blazeInstance);
 
-  const { scriptAddress: treasuryScriptAddress } = loadTreasuryScript(
-    blazeInstance.provider.network,
-    configs.treasury,
-  );
+  const { scriptAddress: treasuryScriptAddress } = scripts.treasuryScript;
 
   console.log(treasuryScriptAddress.toBech32());
   const utxos = await blazeInstance.provider.getUnspentOutputs(

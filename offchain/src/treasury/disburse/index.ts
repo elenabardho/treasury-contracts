@@ -2,6 +2,7 @@ import {
   Address,
   AssetId,
   AuxiliaryData,
+  CredentialType,
   Datum,
   Ed25519KeyHashHex,
   NetworkId,
@@ -127,7 +128,11 @@ export async function disburse<P extends Provider, W extends Wallet>({
   }
 
   for (const { address, amount } of recipients) {
-    if (datum) {
+    const isScript =
+      address.getProps().paymentPart?.type === CredentialType.ScriptHash;
+    if (isScript) {
+      tx.lockAssets(address, amount, datum ?? Data.Void());
+    } else if (datum) {
       tx.lockAssets(address, amount, datum);
     } else {
       tx.payAssets(address, amount);
