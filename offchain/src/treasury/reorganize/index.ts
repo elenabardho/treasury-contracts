@@ -1,6 +1,8 @@
 import {
   AssetId,
+  AuxiliaryData,
   Ed25519KeyHashHex,
+  NetworkId,
   PlutusData,
   Script,
   Slot,
@@ -17,6 +19,8 @@ import {
 } from "@blaze-cardano/sdk";
 
 import { TreasurySpendRedeemer } from "../../generated-types/contracts.js";
+import { ITransactionMetadata, toTxMetadata } from "../../metadata/shared.js";
+import { IReorganize } from "../../metadata/types/initialize-reorganize.js";
 import {
   attachScriptRef,
   loadConfigsAndScripts,
@@ -31,6 +35,7 @@ export interface IReorganizeArgs<P extends Provider, W extends Wallet> {
   outputAmounts: Value[];
   signers: Ed25519KeyHashHex[];
   additionalScripts?: { script: Script; redeemer: PlutusData }[];
+  metadata?: ITransactionMetadata<IReorganize>;
 }
 
 export async function reorganize<P extends Provider, W extends Wallet>({
@@ -40,17 +45,31 @@ export async function reorganize<P extends Provider, W extends Wallet>({
   outputAmounts,
   signers,
   additionalScripts,
+  metadata,
 }: IReorganizeArgs<P, W>): Promise<TxBuilder> {
   const { configs, scripts } = loadConfigsAndScripts(blaze, configsOrScripts);
   const { scriptAddress } = scripts.treasuryScript;
   const registryInput = await blaze.provider.getUnspentOutputByNFT(
     AssetId(configs.treasury.registry_token + toHex(Buffer.from("REGISTRY"))),
   );
+  const maxHorizon = blaze.provider.network === NetworkId.Testnet ? 6 : 36;
+  const upperBoundUnix = Math.min(
+    Number(configs.treasury.expiration),
+    Date.now() + maxHorizon * 60 * 60 * 1000,
+  );
+  const upperBoundSlot = blaze.provider.unixToSlot(upperBoundUnix) - 30;
+
   let tx = blaze
     .newTransaction()
-    .setValidUntil(Slot(Number(configs.treasury.expiration / 1000n) - 1))
+    .setValidUntil(Slot(upperBoundSlot))
     .addReferenceInput(registryInput);
   tx = await attachScriptRef(tx, scripts.treasuryScript, blaze);
+
+  if (metadata) {
+    const auxData = new AuxiliaryData();
+    auxData.setMetadata(toTxMetadata(metadata));
+    tx = tx.setAuxiliaryData(auxData);
+  }
 
   if (!!additionalScripts) {
     for (const { script, redeemer } of additionalScripts) {
