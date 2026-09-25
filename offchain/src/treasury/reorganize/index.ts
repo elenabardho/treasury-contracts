@@ -61,6 +61,13 @@ export async function reorganize<P extends Provider, W extends Wallet>({
 
   if (validFromSlot) {
     tx = tx.setValidFrom(Slot(validFromSlot));
+    // Blockfrost rejects evaluation when validFrom > currentSlot because the node
+    // considers the tx "not yet valid" at the current tip (Cardano phase-1 check).
+    // Strip validityStart from the draft tx during evaluation only; the final tx keeps it.
+    tx = tx.useEvaluator(async (draftTx, additionalUtxos) => {
+      draftTx.body().setValidityStartInterval(undefined as unknown as Slot);
+      return blaze.provider.evaluateTransaction(draftTx, additionalUtxos);
+    });
   }
   if (validUntilSlot) {
     tx = tx.setValidUntil(Slot(validUntilSlot));
