@@ -1,6 +1,6 @@
-import { input } from "@inquirer/prompts";
 import { Blaze, makeValue, Provider, Wallet } from "@blaze-cardano/sdk";
 import * as Tx from "@blaze-cardano/tx";
+import { input } from "@inquirer/prompts";
 import { Treasury } from "../../src";
 import { ETransactionEvent } from "../../src/metadata/types/events";
 import { IReorganize } from "../../src/metadata/types/initialize-reorganize";
@@ -10,6 +10,8 @@ import {
   getActualPermission,
   getBlazeInstance,
   getConfigs,
+  getDate,
+  getOptional,
   getOutputs,
   getSigners,
   getTransactionMetadata,
@@ -18,6 +20,28 @@ import {
   transactionDialog,
 } from "../shared";
 
+export async function getValidInterval(): Promise<{
+  fromPosix?: number;
+  toPosix?: number;
+}> {
+  const validStart = await getOptional(
+    "Set a validity start? (leave No to make valid immediately)",
+    undefined,
+    () => getDate("Valid Start?"),
+  );
+  if (validStart) {
+    return {
+      fromPosix: validStart.valueOf(),
+      toPosix: validStart.valueOf() + 36 * 60 * 60 * 1000,
+    };
+  }
+  const validEnd = await getOptional(
+    "Override the validity end / TTL?",
+    undefined,
+    () => getDate("Valid Until?"),
+  );
+  return { toPosix: validEnd?.valueOf() };
+}
 export async function reorganize(
   blazeInstance: Blaze<Provider, Wallet> | undefined = undefined,
 ): Promise<void> {
@@ -82,9 +106,9 @@ export async function reorganize(
 
   const reorganizePermissions = metadata
     ? getActualPermission(
-        metadata.body.permissions.reorganize,
-        metadata.body.permissions,
-      )
+      metadata.body.permissions.reorganize,
+      metadata.body.permissions,
+    )
     : toPermission(configs.treasury.permissions.reorganize);
 
   const signers = await getSigners(reorganizePermissions);
@@ -101,6 +125,7 @@ export async function reorganize(
       outputs,
     },
   );
+  const validityInterval = await getValidInterval();
 
   const tx = await Treasury.reorganize({
     configsOrScripts: { configs, scripts },
@@ -109,6 +134,12 @@ export async function reorganize(
     outputAmounts,
     signers: [...signers.values()],
     metadata: txMetadata,
+    validFromSlot: validityInterval.fromPosix !== undefined
+      ? blazeInstance.provider.unixToSlot(validityInterval.fromPosix)
+      : undefined,
+    validUntilSlot: validityInterval.toPosix !== undefined
+      ? blazeInstance.provider.unixToSlot(validityInterval.toPosix)
+      : undefined,
   });
 
   const finalTx = await tx.complete();

@@ -36,6 +36,8 @@ export interface IReorganizeArgs<P extends Provider, W extends Wallet> {
   signers: Ed25519KeyHashHex[];
   additionalScripts?: { script: Script; redeemer: PlutusData }[];
   metadata?: ITransactionMetadata<IReorganize>;
+  validFromSlot?: number;
+  validUntilSlot?: number;
 }
 
 export async function reorganize<P extends Provider, W extends Wallet>({
@@ -46,23 +48,33 @@ export async function reorganize<P extends Provider, W extends Wallet>({
   signers,
   additionalScripts,
   metadata,
+  validFromSlot,
+  validUntilSlot,
 }: IReorganizeArgs<P, W>): Promise<TxBuilder> {
   const { configs, scripts } = loadConfigsAndScripts(blaze, configsOrScripts);
   const { scriptAddress } = scripts.treasuryScript;
   const registryInput = await blaze.provider.getUnspentOutputByNFT(
     AssetId(configs.treasury.registry_token + toHex(Buffer.from("REGISTRY"))),
   );
-  const maxHorizon = blaze.provider.network === NetworkId.Testnet ? 6 : 36;
-  const upperBoundUnix = Math.min(
-    Number(configs.treasury.expiration),
-    Date.now() + maxHorizon * 60 * 60 * 1000,
-  );
-  const upperBoundSlot = blaze.provider.unixToSlot(upperBoundUnix) - 30;
 
-  let tx = blaze
-    .newTransaction()
-    .setValidUntil(Slot(upperBoundSlot))
-    .addReferenceInput(registryInput);
+  let tx = blaze.newTransaction().addReferenceInput(registryInput);
+
+  if (validFromSlot) {
+    tx = tx.setValidFrom(Slot(validFromSlot));
+  }
+  if (validUntilSlot) {
+    tx = tx.setValidUntil(Slot(validUntilSlot));
+  } else {
+    const start = validFromSlot
+      ? blaze.provider.slotToUnix(validFromSlot)
+      : Date.now();
+    const maxHorizon = blaze.provider.network === NetworkId.Testnet ? 6 : 36;
+    const upperBoundUnix = Math.min(
+      Number(configs.treasury.expiration),
+      start + maxHorizon * 60 * 60 * 1000,
+    );
+    tx = tx.setValidUntil(Slot(blaze.provider.unixToSlot(upperBoundUnix) - 30));
+  }
   tx = await attachScriptRef(tx, scripts.treasuryScript, blaze);
 
   if (metadata) {
