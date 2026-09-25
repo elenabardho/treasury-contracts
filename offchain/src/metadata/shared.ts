@@ -11,7 +11,7 @@ import { IComplete } from "./types/complete.js";
 import { IDisburse } from "./types/disburse.js";
 import { ETransactionEvent } from "./types/events.js";
 import { IFund } from "./types/fund.js";
-import { IInitialize } from "./types/initialize-reorganize.js";
+import { IInitialize, IReorganize } from "./types/initialize-reorganize.js";
 import { INewInstance } from "./types/new-instance.js";
 import { ISweep } from "./types/sweep.js";
 import { IWithdraw } from "./types/withdraw.js";
@@ -30,6 +30,7 @@ export type TMetadataBody =
   | IResume
   | IFund
   | IInitialize
+  | IReorganize
   | IWithdraw
   | IComplete
   | INewInstance

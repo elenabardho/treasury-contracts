@@ -3,6 +3,7 @@
 import { Command } from "commander";
 import { fund } from "./treasury/fund";
 import { publish } from "./treasury/publish";
+import { reorganize } from "./treasury/reorganize";
 import { withdraw as initialize } from "./treasury/withdraw";
 import { pause, resume } from "./vendor/adjudicate";
 import { withdraw } from "./vendor/withdraw";
@@ -33,6 +34,13 @@ program
   .description("Fund a vendor utxo from the treasury")
   .action(async () => {
     await fund();
+  });
+
+program
+  .command("reorganize")
+  .description("Reorganize UTxOs at the treasury script address")
+  .action(async () => {
+    await reorganize();
   });
 
 program
