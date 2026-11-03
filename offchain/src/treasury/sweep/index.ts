@@ -94,6 +94,11 @@ export async function sweep<P extends Provider, W extends Wallet>({
     const auxData = new AuxiliaryData();
     auxData.setMetadata(toTxMetadata(metadata));
     tx = tx.setAuxiliaryData(auxData);
+    // Only add the author as a required signer if they aren't already one
+    // (e.g. when the tx author is also one of the early-sweep permission holders)
+    if (!signers?.includes(Ed25519KeyHashHex(metadata.txAuthor))) {
+      tx = tx.addRequiredSigner(Ed25519KeyHashHex(metadata.txAuthor));
+    }
   }
 
   const remainder = Value.merge(input.output().amount(), makeValue(-amount));

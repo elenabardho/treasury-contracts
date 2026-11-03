@@ -596,16 +596,23 @@ export async function transactionDialog(
             expanded = true;
           }
           break;
-        case "submit":
+        case "submit": {
           const url =
             network === Core.NetworkId.Testnet
               ? "https://api.treasury.preview.sundae.fi/graphql"
               : "https://api.treasury.sundae.fi/graphql";
+          const submitCbor = await input({
+            message:
+              "Paste the signed transaction CBOR to submit (leave blank to use the current unsigned CBOR):",
+          }).then((s) => (s.trim() === "" ? txCbor : s.trim()));
+          const label = await input({
+            message: "What label should the tx have in the UI?",
+          });
           const query = `
           mutation {
             newTransaction(tx: {
-              label: "${await input({ message: "What label should the tx have in the UI?" })}",
-              cborHex: "${txCbor}"
+              label: "${label}",
+              cborHex: "${submitCbor}"
             }) {
               ok
             }
@@ -613,10 +620,12 @@ export async function transactionDialog(
         `;
           const resp = await fetch(url, {
             method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ query }),
           });
           console.log(await resp.json());
-          break;
+          return;
+        }
         case "back":
           return;
         case "expand":
