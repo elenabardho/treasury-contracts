@@ -1,4 +1,4 @@
-import { Ed25519KeyHashHex } from "@blaze-cardano/core";
+import { CredentialType, Ed25519KeyHashHex } from "@blaze-cardano/core";
 import { Blaze, Provider, Wallet } from "@blaze-cardano/sdk";
 import { confirm, input } from "@inquirer/prompts";
 import { Treasury } from "../../src";
@@ -6,11 +6,13 @@ import { ITransactionMetadata } from "../../src/metadata/shared";
 import { ETransactionEvent } from "../../src/metadata/types/events";
 import { ISweep } from "../../src/metadata/types/sweep";
 import {
+  addressOrHexToHash,
   getBlazeInstance,
   getConfigs,
   getOptional,
   getSigners,
   getTransactionMetadata,
+  isAddressOrHex,
   maybeInput,
   resolvePermission,
   selectUtxo,
@@ -133,6 +135,17 @@ export async function sweep(
     );
   }
 
+  const reviewerInput = await maybeInput({
+    message:
+      "Enter a hexadecimal pubkey hash or bech32 address for a reviewer who must co-sign (optional):",
+    validate: (s) => s === "" || isAddressOrHex(s, CredentialType.KeyHash),
+  });
+  const reviewer = reviewerInput
+    ? Ed25519KeyHashHex(
+        await addressOrHexToHash(reviewerInput, CredentialType.KeyHash),
+      )
+    : undefined;
+
   const tx = await Treasury.sweep({
     configsOrScripts: { configs, scripts },
     input: utxo,
@@ -141,6 +154,7 @@ export async function sweep(
     signers,
     after: !early,
     metadata: txMetadata,
+    reviewer,
   });
   const finalTx = await tx.complete();
   await transactionDialog(

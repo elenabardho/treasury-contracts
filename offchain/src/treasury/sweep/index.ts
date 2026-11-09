@@ -35,6 +35,7 @@ export interface ISweepArgs<P extends Provider, W extends Wallet> {
   after?: boolean;
   now?: Date;
   metadata?: ITransactionMetadata<ISweep>;
+  reviewer?: Ed25519KeyHashHex;
 }
 
 export async function sweep<P extends Provider, W extends Wallet>({
@@ -46,6 +47,7 @@ export async function sweep<P extends Provider, W extends Wallet>({
   after,
   now,
   metadata,
+  reviewer,
 }: ISweepArgs<P, W>): Promise<TxBuilder> {
   const { configs, scripts } = loadConfigsAndScripts(blaze, configsOrScripts);
   amount ??= input.output().amount().coin();
@@ -99,6 +101,10 @@ export async function sweep<P extends Provider, W extends Wallet>({
     if (!signers?.includes(Ed25519KeyHashHex(metadata.txAuthor))) {
       tx = tx.addRequiredSigner(Ed25519KeyHashHex(metadata.txAuthor));
     }
+  }
+
+  if (reviewer) {
+    tx = tx.addRequiredSigner(reviewer);
   }
 
   const remainder = Value.merge(input.output().amount(), makeValue(-amount));
