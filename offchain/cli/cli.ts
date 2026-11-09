@@ -3,6 +3,7 @@
 import { Command } from "commander";
 import { fund } from "./treasury/fund";
 import { publish } from "./treasury/publish";
+import { sweep } from "./treasury/sweep";
 import { withdraw as initialize } from "./treasury/withdraw";
 import { pause, resume } from "./vendor/adjudicate";
 import { withdraw } from "./vendor/withdraw";
@@ -54,6 +55,15 @@ program
   .description("Withdraw one or more payouts in a vendor contract")
   .action(async () => {
     await withdraw();
+  });
+
+program
+  .command("sweep")
+  .description(
+    "Sweep an expired treasury utxo, donating funds back to the Cardano treasury",
+  )
+  .action(async () => {
+    await sweep();
   });
 
 program.parse(process.argv);

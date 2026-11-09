@@ -4,7 +4,7 @@ import { checkbox, input } from "@inquirer/prompts";
 import { Ed25519KeyHashHex } from "@blaze-cardano/core";
 
 import {
-  getActualPermission,
+  resolvePermission,
   getBlazeInstance,
   getConfigs,
   getSigners,
@@ -13,7 +13,7 @@ import {
   selectUtxo,
   transactionDialog,
 } from "../shared";
-import { toPermission, Vendor } from "../../src";
+import { Vendor } from "../../src";
 import { VendorDatum } from "../../src/generated-types/contracts";
 import {
   IAdjudicatedMilestone,
@@ -96,21 +96,14 @@ async function adjudicate(
     milestones,
   } as IPause | IResume;
 
-  //TODO: Make this non ugly
   const signers = await getSigners(
     pause
-      ? metadata
-        ? getActualPermission(
-            metadata.body.permissions.pause,
-            metadata.body.permissions,
-          )
-        : toPermission(configs.vendor.permissions.pause)
-      : metadata
-        ? getActualPermission(
-            metadata.body.permissions.resume,
-            metadata.body.permissions,
-          )
-        : toPermission(configs.vendor.permissions.resume),
+      ? resolvePermission("pause", configs.vendor.permissions.pause, metadata)
+      : resolvePermission(
+          "resume",
+          configs.vendor.permissions.resume,
+          metadata,
+        ),
   );
 
   const txMetadata = await getTransactionMetadata(

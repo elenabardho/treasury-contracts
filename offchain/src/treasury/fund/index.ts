@@ -3,7 +3,6 @@ import {
   AuxiliaryData,
   Ed25519KeyHashHex,
   Hash28ByteBase16,
-  NetworkId,
   PlutusData,
   Script,
   Slot,
@@ -31,6 +30,7 @@ import { IFund } from "../../metadata/types/fund.js";
 import {
   attachScriptRef,
   coreValueToContractsValue,
+  horizonCappedValidUntilSlot,
   loadConfigsAndScripts,
   rewardAccountFromScript,
   TConfigsOrScripts,
@@ -79,15 +79,14 @@ export async function fund<P extends Provider, W extends Wallet>({
   } else {
     const start = validFromSlot
       ? blaze.provider.slotToUnix(validFromSlot)
-      : Date.now();
-    const maxHorizon = blaze.provider.network === NetworkId.Testnet ? 6 : 36;
-    const upperBoundUnix = Math.min(
-      Number(configs.treasury.expiration),
-      start + maxHorizon * 60 * 60 * 1000,
+      : undefined;
+    tx.setValidUntil(
+      horizonCappedValidUntilSlot(
+        blaze.provider,
+        configs.treasury.expiration,
+        start,
+      ),
     );
-
-    const upperBoundSlot = blaze.provider.unixToSlot(upperBoundUnix) - 30;
-    tx.setValidUntil(Slot(upperBoundSlot));
   }
 
   if (!!additionalScripts) {

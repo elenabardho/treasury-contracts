@@ -21,6 +21,7 @@ import clipboard from "clipboardy";
 import fetch from "node-fetch";
 import { ETransactionEvent } from "../src";
 import {
+  MultisigScript,
   OneshotOneshotMint,
   TreasuryConfiguration,
   TreasuryTreasurySpend,
@@ -35,6 +36,7 @@ import { IOutput } from "../src/metadata/types/initialize-reorganize";
 import { INewInstance } from "../src/metadata/types/new-instance";
 import {
   toMultisig,
+  toPermission,
   TPermissionMetadata,
   TPermissionName,
 } from "../src/metadata/types/permission";
@@ -594,16 +596,23 @@ export async function transactionDialog(
             expanded = true;
           }
           break;
-        case "submit":
+        case "submit": {
           const url =
             network === Core.NetworkId.Testnet
               ? "https://api.treasury.preview.sundae.fi/graphql"
               : "https://api.treasury.sundae.fi/graphql";
+          const submitCbor = await input({
+            message:
+              "Paste the signed transaction CBOR to submit (leave blank to use the current unsigned CBOR):",
+          }).then((s) => (s.trim() === "" ? txCbor : s.trim()));
+          const label = await input({
+            message: "What label should the tx have in the UI?",
+          });
           const query = `
           mutation {
             newTransaction(tx: {
-              label: "${await input({ message: "What label should the tx have in the UI?" })}",
-              cborHex: "${txCbor}"
+              label: "${label}",
+              cborHex: "${submitCbor}"
             }) {
               ok
             }
@@ -611,10 +620,12 @@ export async function transactionDialog(
         `;
           const resp = await fetch(url, {
             method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ query }),
           });
           console.log(await resp.json());
-          break;
+          return;
+        }
         case "back":
           return;
         case "expand":
@@ -974,6 +985,17 @@ export async function readMetadataFromFile(): Promise<
         obj[k].metadata as ITransactionMetadata<INewInstance>,
       );
       scriptsConstructed = true;
+    } else {
+      try {
+        obj[k].scripts.treasuryScript.config = reviveTreasuryConfig(
+          obj[k].scripts.treasuryScript.config,
+        );
+        obj[k].scripts.vendorScript.config = reviveVendorConfig(
+          obj[k].scripts.vendorScript.config,
+        );
+      } catch {
+        // Leave malformed entries untouched, matching the old pass-through behavior
+      }
     }
     metadata.set(k, obj[k]);
   }
@@ -986,6 +1008,56 @@ export async function readMetadataFromFile(): Promise<
 
 export function bigIntReplacer(_key: string, value: any): any {
   return typeof value === "bigint" ? value.toString() : value;
+}
+
+// JSON.parse leaves bigint fields (serialized as strings by bigIntReplacer) as strings,
+// so they must be converted back before the configs are used
+function reviveMultisig(multisig: MultisigScript): MultisigScript {
+  if ("AtLeast" in multisig) {
+    return {
+      AtLeast: {
+        required: BigInt(multisig.AtLeast.required),
+        scripts: multisig.AtLeast.scripts.map(reviveMultisig),
+      },
+    };
+  } else if ("AllOf" in multisig) {
+    return { AllOf: { scripts: multisig.AllOf.scripts.map(reviveMultisig) } };
+  } else if ("AnyOf" in multisig) {
+    return { AnyOf: { scripts: multisig.AnyOf.scripts.map(reviveMultisig) } };
+  } else if ("Before" in multisig) {
+    return { Before: { time: BigInt(multisig.Before.time) } };
+  } else if ("After" in multisig) {
+    return { After: { time: BigInt(multisig.After.time) } };
+  }
+  return multisig;
+}
+
+function reviveTreasuryConfig(
+  config: TreasuryConfiguration,
+): TreasuryConfiguration {
+  return {
+    ...config,
+    expiration: BigInt(config.expiration),
+    payout_upperbound: BigInt(config.payout_upperbound),
+    permissions: {
+      reorganize: reviveMultisig(config.permissions.reorganize),
+      sweep: reviveMultisig(config.permissions.sweep),
+      fund: reviveMultisig(config.permissions.fund),
+      disburse: reviveMultisig(config.permissions.disburse),
+    },
+  };
+}
+
+function reviveVendorConfig(config: VendorConfiguration): VendorConfiguration {
+  return {
+    ...config,
+    expiration: BigInt(config.expiration),
+    permissions: {
+      pause: reviveMultisig(config.permissions.pause),
+      resume: reviveMultisig(config.permissions.resume),
+      modify: reviveMultisig(config.permissions.modify),
+    },
+  };
 }
 
 export async function writeMetadataToFile(
@@ -1330,6 +1402,19 @@ export async function selectUtxos(
     choices,
   });
   return selectedIndices.map((index) => utxos[index]);
+}
+
+export function resolvePermission(
+  name: TPermissionName,
+  fallback: MultisigScript,
+  metadata?: ITransactionMetadata<INewInstance>,
+): TPermissionMetadata {
+  return metadata
+    ? getActualPermission(
+        metadata.body.permissions[name],
+        metadata.body.permissions,
+      )
+    : toPermission(fallback);
 }
 
 export function getActualPermission(

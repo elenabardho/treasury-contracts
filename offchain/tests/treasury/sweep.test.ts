@@ -1,17 +1,25 @@
 import {
   Address,
   AssetId,
+  Ed25519KeyHashHex,
   Hash28ByteBase16,
   Script,
+  Slot,
 } from "@blaze-cardano/core";
 import * as Data from "@blaze-cardano/data";
 import { Emulator } from "@blaze-cardano/emulator";
 import { Core, makeValue } from "@blaze-cardano/sdk";
-import { beforeEach, describe, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import {
   TreasuryConfiguration,
   TreasurySpendRedeemer,
 } from "../../src/generated-types/contracts";
+import {
+  fromTxMetadata,
+  ITransactionMetadata,
+} from "../../src/metadata/shared";
+import { ETransactionEvent } from "../../src/metadata/types/events";
+import { ISweep } from "../../src/metadata/types/sweep";
 import { IConfigs, loadTreasuryScript } from "../../src/shared";
 import { sweep } from "../../src/treasury/sweep";
 import {
@@ -19,6 +27,8 @@ import {
   sampleTreasuryConfig,
   sampleVendorConfig,
   setupEmulator,
+  sweep_key,
+  Sweeper,
 } from "../utilities";
 
 describe("When sweeping", () => {
@@ -103,6 +113,60 @@ describe("When sweeping", () => {
               blaze,
             }),
           );
+        });
+      });
+
+      test("can attach transaction metadata explaining the sweep", async () => {
+        await emulator.as("Anyone", async (blaze) => {
+          const txMetadata: ITransactionMetadata<ISweep> = {
+            "@context":
+              "https://raw.githubusercontent.com/SundaeSwap-finance/treasury-contracts/refs/heads/main/offchain/src/metadata/context.jsonld",
+            hashAlgorithm: "blake2b-256",
+            body: {
+              event: ETransactionEvent.SWEEP,
+              projectIdentifier: "PO123",
+              milestones: ["001", "002"],
+              comment: "Treasury expired; sweeping surplus back",
+            },
+            txAuthor:
+              "c279a3fb3b4e62bbc78e288783b58045d4ae82a18867d8352d02775a",
+            instance: config.registry_token,
+          };
+          const tx = await (
+            await sweep({
+              configsOrScripts: { configs },
+              input: scriptInput,
+              blaze,
+              metadata: txMetadata,
+            })
+          ).complete();
+          const auxMetadata = tx.auxiliaryData()?.metadata();
+          expect(auxMetadata).toBeDefined();
+          const roundTripped = await fromTxMetadata(auxMetadata!);
+          expect(roundTripped.body.event).toEqual(ETransactionEvent.SWEEP);
+          const body = roundTripped.body as ISweep;
+          expect(body.comment).toEqual(
+            "Treasury expired; sweeping surplus back",
+          );
+          expect(body.projectIdentifier).toEqual("PO123");
+          expect(body.milestones).toEqual(["001", "002"]);
+        });
+      });
+
+      test("does not lock a dust output at the script address on a full sweep", async () => {
+        await emulator.as("Anyone", async (blaze) => {
+          const tx = await (
+            await sweep({
+              configsOrScripts: { configs },
+              input: scriptInput,
+              blaze,
+            })
+          ).complete();
+          const scriptOutputs = [...tx.body().outputs()].filter(
+            (output) =>
+              output.address().toBech32() === scriptAddress.toBech32(),
+          );
+          expect(scriptOutputs).toBeEmpty();
         });
       });
 
@@ -285,6 +349,66 @@ describe("When sweeping", () => {
     });
   });
   describe("before the timeout", () => {
+    describe("the treasury oversight committee", () => {
+      test("can sweep funds back to the treasury early", async () => {
+        await emulator.as(Sweeper, async (blaze) => {
+          await emulator.expectValidTransaction(
+            blaze,
+            await sweep({
+              configsOrScripts: { configs },
+              input: scriptInput,
+              blaze,
+              signers: [Ed25519KeyHashHex(await sweep_key(emulator))],
+              now: new Date(emulator.slotToUnix(Slot(0))),
+            }),
+          );
+        });
+      });
+
+      test("can partially sweep early, so long as the remainder stays locked", async () => {
+        await emulator.as(Sweeper, async (blaze) => {
+          await emulator.expectValidTransaction(
+            blaze,
+            await sweep({
+              configsOrScripts: { configs },
+              input: scriptInput,
+              blaze,
+              amount: 500_000_000_000n - 5_000_000n,
+              signers: [Ed25519KeyHashHex(await sweep_key(emulator))],
+              now: new Date(emulator.slotToUnix(Slot(0))),
+            }),
+          );
+        });
+      });
+
+      test("cannot sweep early without signers", async () => {
+        await emulator.as(Sweeper, async (blaze) => {
+          expect(
+            sweep({
+              configsOrScripts: { configs },
+              input: scriptInput,
+              blaze,
+              after: false,
+            }),
+          ).rejects.toThrow(/requires signers/);
+        });
+      });
+
+      test("cannot sweep early too close to the expiration", async () => {
+        await emulator.as(Sweeper, async (blaze) => {
+          expect(
+            sweep({
+              configsOrScripts: { configs },
+              input: scriptInput,
+              blaze,
+              signers: [Ed25519KeyHashHex(await sweep_key(emulator))],
+              now: new Date(Number(config.expiration) - 10_000),
+            }),
+          ).rejects.toThrow(/expiration is too close/);
+        });
+      });
+    });
+
     describe("a malicious user", () => {
       test("cannot sweep funds", async () => {
         await emulator.as("MaliciousUser", async (blaze) => {
